@@ -9,7 +9,7 @@
 * 🧠 **Autonomous Task Execution**: Reads your coding prompt, plans, creates files, runs code, tests output, and iterates automatically.
 * ⚡ **Lightweight & Fast**: Built in pure Go with minimal external dependencies for speed and portability.
 * 📂 **File Manipulation**: Supports creating and appending to files through AI-driven commands.
-* 🔧 **Minimal & Simple**: A single Go file with clear logic — unlike bloated frameworks.
+* 🔧 **Minimal & Simple**: A single Go file with clear logic unlike bloated frameworks.
 
 ---
 
@@ -48,7 +48,7 @@ The agent will:
 
 ### ✅ **Lightweight & Fast**
 
-No bloated Python chains or orchestration layers. Zug is pure Go — fast to build, fast to run, easy to understand.
+No bloated Python chains or orchestration layers. Zug is pure Go: fast to build, fast to run, easy to understand.
 
 ### ✅ **Minimal, Understandable Design**
 
@@ -56,14 +56,14 @@ All logic is contained in a single, readable Go file. Great for hacking, auditin
 
 ### 🔮 **Coming Soon: Multi-Provider AI Support**
 
-Support for Claude, Gemini, Ollama (self-hosted), and other providers is planned — abstracting the model layer for maximum flexibility.
+Support for Claude, Gemini, Ollama (self-hosted), and other providers is planned abstracting the model layer for maximum flexibility.
 
 ---
 
 ## 📌 Example Prompt
 
 ```bash
-go run zug.go "Create a CLI tool in Go that converts temperatures between Celsius and Fahrenheit and includes tests"
+./zug "Create a CLI tool in Go that converts temperatures between Celsius and Fahrenheit and includes tests"
 ```
 
 ---
