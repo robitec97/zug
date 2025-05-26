@@ -42,16 +42,6 @@ The agent will:
 * Save files in the `project_go/` directory
 * Run tests if found
 * Iterate on failures until the goal is reached
-
----
-
-## 📁 Project Structure
-
-```text
-project_go/
-├── main.go
-└── tests/        # Optional test files
-```
 ---
 
 ## 🧠 Why Zug?
