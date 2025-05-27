@@ -18,32 +18,38 @@ import (
 )
 
 // ────────────────────────────────────────────────
-//  AutonomousCodingAgent — a multi-step GPT-4o driven
-//  coding assistant that can iteratively read/modify the
-//  local code-base, run shell commands & execute tests.
+//  AutonomousCodingAgent — a multi-step GPT driven
+//  coding assistant that can iteratively read/modify the
+//  local code-base, run shell commands & execute tests.
 // ────────────────────────────────────────────────
 
 type AutonomousCodingAgent struct {
 	client         *openai.Client
 	projectDir     string
 	ctx            []openai.ChatCompletionMessage
-	maxCtxMessages int // sliding-window for conversation history
+	maxCtxMessages int    // sliding-window for conversation history
+	model          string // Stores the chosen OpenAI model
 }
 
-func NewAgent(apiKey, projectDir string) *AutonomousCodingAgent {
+func NewAgent(apiKey, projectDir, modelName string) *AutonomousCodingAgent {
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		log.Fatalf("cannot create project dir %s: %v", projectDir, err)
+	}
+	if modelName == "" {
+		modelName = openai.GPT4o // Default model if not specified
+		log.Printf("[agent] No model specified, defaulting to %s\n", modelName)
 	}
 	return &AutonomousCodingAgent{
 		client:         openai.NewClient(apiKey),
 		projectDir:     projectDir,
 		maxCtxMessages: 40, // keep the last N messages to stay within budget
+		model:          modelName,
 	}
 }
 
 /*──────────────────────────────
-  Utility helpers
-  ─────────────────────────────*/
+  Utility helpers
+  ─────────────────────────────*/
 
 // absPath ensures rel cannot traverse outside the sandbox.
 func (a *AutonomousCodingAgent) absPath(rel string) (string, error) {
@@ -63,8 +69,8 @@ func (a *AutonomousCodingAgent) absPath(rel string) (string, error) {
 }
 
 /*──────────────────────────────
-  File operations (tools)
-  ─────────────────────────────*/
+  File operations (tools)
+  ─────────────────────────────*/
 
 func (a *AutonomousCodingAgent) createFile(path, content string) (string, error) {
 	full, err := a.absPath(path)
@@ -179,8 +185,8 @@ func (a *AutonomousCodingAgent) listFiles() (string, error) {
 }
 
 /*──────────────────────────────
-  Shell runner (tool)
-  ─────────────────────────────*/
+  Shell runner (tool)
+  ─────────────────────────────*/
 
 func (a *AutonomousCodingAgent) runShell(cmd string) (string, error) {
 	// For security, consider disallowing certain commands or patterns if this agent
@@ -204,8 +210,8 @@ func (a *AutonomousCodingAgent) runShell(cmd string) (string, error) {
 }
 
 /*──────────────────────────────
-  OpenAI interaction helpers
-  ─────────────────────────────*/
+  OpenAI interaction helpers
+  ─────────────────────────────*/
 
 // toolParams builds a minimal JSON schema {string:string, ...}.
 func toolParams(keys ...string) map[string]interface{} {
@@ -305,10 +311,10 @@ func (a *AutonomousCodingAgent) chat(userPrompt string, temperature float32) (st
 
 	// Loop for potential multiple tool calls within a single user turn
 	for step := 0; step < 10; step++ { // Safety: max 10 tool hops per user turn
-		log.Printf("[agent] Chat step %d. Sending %d messages to API (incl. system prompt).\n", step+1, len(messagesForAPI))
+		log.Printf("[agent] Chat step %d. Sending %d messages to API (incl. system prompt) using model %s.\n", step+1, len(messagesForAPI), a.model)
 
 		req := openai.ChatCompletionRequest{
-			Model:       openai.GPT4o, // Or other capable model like gpt-4-turbo
+			Model:       a.model, // Use the agent's configured model
 			Messages:    messagesForAPI,
 			Temperature: temperature,
 			Tools:       a.toolDefs(),
@@ -332,7 +338,6 @@ func (a *AutonomousCodingAgent) chat(userPrompt string, temperature float32) (st
 		a.ctx = append(a.ctx, msg)
 		// Also add it to messagesForAPI for the *next* iteration of this tool-use loop, if any
 		messagesForAPI = append(messagesForAPI, msg)
-
 
 		// If no tool calls, assistant provided a direct content response. This turn is over.
 		if len(msg.ToolCalls) == 0 {
@@ -397,7 +402,6 @@ func (a *AutonomousCodingAgent) chat(userPrompt string, temperature float32) (st
 	log.Println("[agent] Error: Exceeded maximum tool invocations for this turn.")
 	return "", errors.New("too many tool invocations without a final answer")
 }
-
 
 // execTool deserialises args and dispatches to the matching Go helper.
 func (a *AutonomousCodingAgent) execTool(name, jsonArgs string) (string, error) {
@@ -471,11 +475,11 @@ func (a *AutonomousCodingAgent) execTool(name, jsonArgs string) (string, error) 
 }
 
 /*──────────────────────────────
-  Feedback-driven loop
-  ─────────────────────────────*/
+  Feedback-driven loop
+  ─────────────────────────────*/
 
 func (a *AutonomousCodingAgent) feedbackLoop(initialTask string) {
-	log.Printf("[agent] 🏁 Starting main task: %s\n", initialTask)
+	log.Printf("[agent] 🏁 Starting main task: %s (Using model: %s)\n", initialTask, a.model)
 	currentTaskInstruction := initialTask
 
 	// Overall loop for iterative refinement based on tests or other feedback
@@ -538,26 +542,40 @@ func (a *AutonomousCodingAgent) feedbackLoop(initialTask string) {
 }
 
 /*──────────────────────────────
-  main
-  ─────────────────────────────*/
+  main
+  ─────────────────────────────*/
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile) // Add file/line number to logs for easier debugging
 
 	if len(os.Args) < 2 || strings.TrimSpace(os.Args[1]) == "" {
-		fmt.Printf("Usage: %s \"<describe your coding task>\"\n", os.Args[0])
-		fmt.Println("Example: go run . \"Create a Python script in main.py that prints 'Hello, World!' and add a test for it in tests/test_main.py\"")
+		fmt.Printf("Usage: %s \"<describe your coding task>\" [model_name]\n", os.Args[0])
+		fmt.Println("Example: go run . \"Create a Python script...\"")
+		fmt.Println("Example with model: go run . \"Create a Python script...\" gpt-4-turbo")
+		fmt.Println("You can also set the OPENAI_MODEL environment variable.")
 		os.Exit(1)
 	}
 	initialTask := os.Args[1]
+	var modelName string
+	if len(os.Args) > 2 {
+		modelName = strings.TrimSpace(os.Args[2])
+	}
+
+	// Prioritize environment variable for model selection
+	envModel := os.Getenv("OPENAI_MODEL")
+	if envModel != "" {
+		modelName = envModel
+		log.Printf("[agent] Using model from OPENAI_MODEL environment variable: %s\n", modelName)
+	} else if modelName != "" {
+		log.Printf("[agent] Using model from command line argument: %s\n", modelName)
+	}
+	// If modelName is still empty here, NewAgent will use the default (e.g., openai.GPT4o)
 
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		log.Fatal("FATAL: OPENAI_API_KEY environment variable is not set.")
 	}
 
-	// Define a project directory. This will be created if it doesn't exist.
-	// Using a subdirectory helps keep generated files organized.
 	projectDirName := "ai_coder_project"
 	wd, err := os.Getwd()
 	if err != nil {
@@ -568,10 +586,7 @@ func main() {
 	log.Printf("[agent] Project directory will be: %s\n", projectFullPath)
 	log.Printf("[agent] Initial task from command line: %s\n", initialTask)
 
-	agent := NewAgent(apiKey, projectFullPath)
-
-	// Initialize context with a simple message if needed, or let chat() handle the first user message.
-	// agent.ctx = []openai.ChatCompletionMessage{} // Start with empty context for chat() to populate
+	agent := NewAgent(apiKey, projectFullPath, modelName)
 
 	agent.feedbackLoop(initialTask)
 
